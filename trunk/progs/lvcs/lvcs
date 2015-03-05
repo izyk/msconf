@@ -1,0 +1,331 @@
+#!/bin/sh
+set -eu
+# Global parameters
+# Path where is the original. orig=""
+# Path where is the current. curr=""
+# Path where is the backup copy. back=""
+action=none
+comm=update
+gact=0
+verbose=0
+bpath="backup"
+#bmsg="Backup at $(date -u +%Y/%m/%d %T)"
+bmsg=""
+ftype=""
+
+# Local parameters, replaced recursively
+dn="" # Currently parsed directory name.
+fn="" # Current file name.
+
+usage () {
+#Usage: lvcs command [parameters] [tracked_path] [path_where_keeps_curent_instance]
+#	-m - message for vcs
+#	-r - revers copy from backup directory to original path, current will not be changed
+#	-u - update current copy without backup,
+#if use -r: -i and -s equal also as -f and -u,
+echo "lvcs - tracks directories and fix all changes in backup directory.
+Usage: lvcs [command] [parameters] [backup_directory]
+command:
+only one command can be used, all later replace previous,
+	-u - update current copy and backup previous(default),
+	-r - restore from backup directory to original path,
+	-k - keep current copy to backup,
+	-c - copy the original to the current,
+	-h - help message
+parameters:
+only one can be set, -i, -f, -s,
+	-i - ignore difference and add all changed paths to notracking file,
+	     only for -u and -c command
+	-f - fix changes without confirmation,
+	-s - skip modifications only report changes
+	-v - be verbose show 'diff -u' if needed,
+	-m 'Message ...'- the message will be append to Change.log in backup
+backup_directory:
+	default 'backup'
+files:
+	tracking	- 'Original path' 'Current Path'
+	notracking	- 'Original path'
+"
+exit $1
+} ### usage ########################################################################################
+
+while getopts urkchifsvm: opt; do
+  case $opt in
+    i) if [ $gact -eq 0 ]; then gact=1; action=ignore; else usage 1; fi ;;
+    f) if [ $gact -eq 0 ]; then gact=1; action=fix; else usage 1; fi ;;
+    s) if [ $gact -eq 0 ]; then gact=1; action=skip; else usage 1; fi ;;
+    u) comm=update ;;
+    r) comm=restore ;;
+    k) comm=keep ;;
+    c) comm=copy ;;
+    h) usage 0 ;;
+    v) verbose=1 ;;
+    m) bmsg="$OPTARG at $(date -u '+%Y/%m/%d %T')" ;;
+    \?) usage 1 ;;
+  esac
+done
+if [ $# -eq $OPTIND ]; then
+  eval bpath=\$\{${OPTIND}%%/\}
+elif [ $# -gt $OPTIND ]; then
+  usage 1
+fi
+if [ $action = "ignore" -a $comm = "keep" ]; then usage 1; fi
+if [ $action = "ignore" -a $comm = "restore" ]; then usage 1; fi
+
+ask_user () {
+echo "$ASK"
+local act
+local prom
+while read -p $PROMPT act; do
+  for prom in $*; do
+    case "$act" in
+      i|I) if [ $prom = i ]; then action=ignore; return 0; fi ;;
+      f|F) if [ $prom = f ]; then action=fix; return 0; fi ;;
+      s|S|"") if [ $prom = s ]; then action=skip; return 0; fi ;;
+    esac
+  done
+done
+} ### ask_user #####################################################################################
+
+get_action () {
+if [ $verbose -eq 1 -a "$ftype" = "file" ]; then
+  ! diff -u -N "${from}${dn}${fn}" "${to}${dn}${fn}"
+else
+  echo "$1"
+fi
+#echo "$1"
+if [ $gact -eq 1 ]; then return; fi
+if [ $comm = restore ]; then
+  ASK="	Fix, replace/remove the original ${orig}${dn}${fn},
+	Skip now"
+  PROMPT="f/S: "
+  ask_user f s
+elif [ $comm = keep ]; then
+  ASK="	Fix, replace/remove the backup ${back}${dn}${fn},
+	Skip now"
+  PROMPT="f/S: "
+  ask_user f s
+else
+  ASK="	Ignore forever - add ${orig}${dn}${fn} to notracking,
+	Fix, copy the new,
+	Skip now"
+  PROMPT="i/f/S: "
+  ask_user i f s
+fi
+} ### get_action ###################################################################################
+
+skip_name() {
+local rd
+local tmp
+#local rd="${1##*/}"
+#return 1 # -e ????
+#if [ ! -e "$1" -o "$rd" = "." -o "$rd" = ".." -o "$rd" = ".git" \
+if [ "$fn" = ".git" \
+    -o "$fn" = "CVS" -o "$fn" = "RCS" -o "$fn" = ".svn" ]; then
+  return 0
+fi
+while read rd; do
+  eval rd=$rd # Remove quotes "" if has
+  rd=${rd%%/} # Remove trailing / if has
+  tmp="${orig}${dn}${fn}"
+  if [ "${tmp##${rd}*}" = "" ]; then
+    echo Name: $tmp was skipped.
+    return 0
+  fi
+done < $notracking
+return 1
+} ### skip_name ####################################################################################
+
+only_in () {
+# File name must be without ": " check it.
+if [ "${rd%: *}" != "${rd%%: *}" ]; then
+  echo Error dir_parse\(\): File name has wrong symbols \": \"
+  exit 3
+fi
+if [ "${rd##Only in ${1}*}" = "" ]; then
+  dn="${rd%: *}"
+  dn="${dn#Only in ${1}}"
+  fn="${rd#Only in ${1}$dn: }"
+  dn="${dn%%/}/"
+  if [ -d "${1}${dn}${fn}" ]; then
+    ftype="directory"
+  fi
+  return 0
+fi
+return 1
+} ### only_in ######################################################################################
+
+fix_action () {
+case $action in
+  ignore)
+    echo "${orig}${dn}${fn}" >> notracking
+    return 1 ;;
+  fix)
+    return 0 ;;
+  skip)
+    return 1 ;;
+  *) echo Error fix_action: Undefined action; exit 2 ;;
+esac
+} ### fix_action ###################################################################################
+
+rm_path () {
+  rm -rf "${1}${dn}${fn}"
+} ### rm_path ######################################################################################
+
+cp_path () {
+if [ "$ftype" = "file" ]; then
+  mkdir -p "${2}${dn}"
+  cp -f "${1}${dn}${fn}" "${2}${dn}${fn}"
+elif [ "$ftype" = "directory" ]; then
+  mkdir -p "${2}${dn}"
+  cp -fr "${1}${dn}${fn}" "${2}${dn}${fn}"
+else
+  echo Error cp_path: Invalide file type.
+  exit 2
+fi
+} ### cp_path ######################################################################################
+
+cp_path_from () {
+if ! fix_action; then
+  return 0
+fi
+case $comm in
+  copy)
+    cp_path "$orig" "$curr" ;;
+  update)
+    if [ -e "${back}${dn}${fn}" ]; then
+      cp_path "$orig" "$curr"
+    elif [ -e "${curr}${dn}${fn}" ]; then
+      cp_path "$curr" "$back"
+      cp_path "$orig" "$curr"
+    else
+      cp_path "$orig" "$curr"
+      cp_path "$orig" "$back"
+    fi ;;
+  restore)
+    cp_path "$back" "$orig" ;;
+  keep)
+    cp_path "$curr" "$back" ;;
+  *)
+    echo Error cp_path_from: Unknown command: $comm;
+    usage 2 ;;
+esac
+} ### cp_path_from #################################################################################
+
+rm_path_to () {
+if ! fix_action; then
+  return 0
+fi
+case $comm in
+  copy)
+    rm_path "$to" ;;
+  update)
+    if [ ! -e "${back}${dn}${fn}" ]; then
+      cp_path "$to" "$back"
+    fi
+    rm_path "$to" ;;
+  restore) ;;
+  keep)
+    rm_path "$back" ;;
+  *)
+  echo Error rm_path_to: Unknown command: $comm;
+  usage 2 ;;
+esac
+} ### rm_path_to ###################################################################################
+
+dir_parse () {
+local dn="${dn}$fn/"
+mkdir -p "${to}$dn"
+local fn
+local ftype
+local rd # Temporary value
+# Begin main loop
+diff -qr "${from}$dn" "${to}$dn"  2>/dev/null |
+while read rd; do
+ftype="file"
+if only_in "$from"; then
+  if skip_name; then continue; fi
+  get_action "We only have $ftype: ${from}${dn}${fn}" <&3
+  cp_path_from
+#  if [ "$ftype" = "directory" -a "$action" = "fix" ]; then
+#    dir_parse
+#  fi
+
+elif only_in "$to"; then
+  if skip_name; then continue; fi
+  get_action "We only have $ftype: ${to}${dn}${fn}" <&3
+  rm_path_to
+
+elif [ "${rd##Files*}" = "" ]; then
+  fn="${rd##*/}"
+  fn="${fn% differ}"
+  dn="${rd#* and $to}"
+  dn="${dn%$fn differ}"
+  if skip_name; then continue; fi
+  get_action "We have different file: ${from}${dn}${fn}" <&3
+  cp_path_from
+
+else
+  echo Error dir_parse\(\): Wrong diff output
+   exit 3
+fi
+done
+} ### dir_parse ####################################################################################
+
+get_path () {
+local bk=${2##/}
+curr="${2%%/}"
+back="$bpath/${bk%%/}"
+if [ -d "$1" ]; then
+  ftype="directory"
+  orig="${1%%/}"
+elif [ -f "$1" ]; then
+  ftype="file"
+  fn=${1##*/}
+  dn="/"
+  orig=${1%/*}
+else
+  echo Error get_path: Wrong file type
+  exit 2
+fi
+} ### get_path #####################################################################################
+
+if [ $comm = restore ]; then
+  tracking="$bpath"/tracking
+  notracking="$bpath"/notracking
+else
+  tracking=tracking
+  notracking=notracking
+fi
+exec 3<&0 # Keep standart input
+while read wpath; do
+  eval get_path $wpath
+  case $comm in
+    copy) 
+      from="$orig"; to="$curr";;
+    update) 
+      from="$orig"; to="$curr";;
+    restore)
+      from="$back"; to="$orig";;
+    keep)
+      from="$back"; to="$curr";;
+    *)
+      echo Unknown command: $comm;
+      usage 2 ;;
+  esac
+  if [ $ftype = "directory" ]; then
+    dir_parse
+  else
+    if ! diff -q "${from}${dn}${fn}" "${to}${dn}${fn}" >/dev/null 2>&1; then
+      get_action "We have different file: ${from}${dn}${fn}" <&3
+      cp_path_from
+    fi
+  fi
+done < $tracking
+
+if [ "$bmsg" != "" ]; then
+  echo $bmsg >> Change.log
+else
+  echo Change.log not changed.
+fi
+
