@@ -1,0 +1,42 @@
+#!/bin/sh
+
+IPTABLES=/sbin/iptables
+SYSCTL=/sbin/sysctl
+#IPTABLES="echo $IPTABLES"
+#SYSCTL="echo $SYSCTL"
+
+$SYSCTL net.ipv4.ip_forward=0
+$IPTABLES -F
+$IPTABLES -t nat -F
+$IPTABLES -t mangle -F
+$IPTABLES -Z
+$IPTABLES -t nat -Z
+$IPTABLES -t mangle -Z
+$IPTABLES -X
+#$IPTABLES -P INPUT ACCEPT
+#$IPTABLES -P OUTPUT ACCEPT
+#$IPTABLES -P FORWARD ACCEPT
+
+
+$IPTABLES -P INPUT DROP
+$IPTABLES -P OUTPUT ACCEPT
+$IPTABLES -P FORWARD DROP
+#INPUT
+$IPTABLES -t filter -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+$IPTABLES -t filter -A INPUT -m state --state NEW -m multiport -p udp --dports 1194 -i venet0 -j ACCEPT
+$IPTABLES -t filter -A INPUT -m state --state NEW -m multiport -p tcp --dports 21,22,25,80,993,995,5201,10000,53450 -i venet0 -j ACCEPT
+$IPTABLES -t filter -A INPUT -i lo -j ACCEPT
+$IPTABLES -t filter -A INPUT -i tun0 -j ACCEPT
+$IPTABLES -t filter -A INPUT -p icmp -j ACCEPT
+
+#NAT
+$IPTABLES -t nat -A POSTROUTING -m state --state NEW -o venet0 -s 192.168.8.0/24 -j MASQUERADE
+$IPTABLES -t nat -A POSTROUTING -m state --state NEW -o venet0 -s 192.168.20.0/24 -j MASQUERADE
+
+#FORWARD
+$IPTABLES -t filter -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+$IPTABLES -t filter -A FORWARD -m state --state NEW -i tun0 -o venet0 -j ACCEPT
+
+
+
+$SYSCTL net.ipv4.ip_forward=1
