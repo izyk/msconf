@@ -266,8 +266,8 @@ elif [ "${rd##Files*}" = "" ]; then
   cp_path_from
 
 else
-  echo Error dir_parse\(\): Wrong diff output
-   exit 3
+  echo Warning dir_parse\(\): Unknown diff output format. File has skipped.
+  echo Diff output: $rd
 fi
 done
 } ### dir_parse ####################################################################################
