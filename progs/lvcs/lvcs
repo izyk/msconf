@@ -41,10 +41,10 @@ only one can be set, -i, -f, -s,
 	-v - be verbose show 'diff -u' if needed,
 	-m 'Message ...'- the message will be append to Change.log in backup
 backup_directory:
-	default 'backup'
+	default './backup'
 files:
-	tracking	- 'Original path' 'Current Path'
-	notracking	- 'Original path'
+	./tracking	- 'Original path' 'Current Path'
+	./notracking	- 'Original path'
 "
 exit $1
 } ### usage ########################################################################################
@@ -128,7 +128,7 @@ while read rd; do
   eval rd=$rd # Remove quotes "" if has
   rd=${rd%%/} # Remove trailing / if has
   tmp="${orig}${dn}${fn}"
-  if [ "${tmp##${rd}*}" = "" ]; then
+  if [ "${tmp##${rd}}" = "" ]; then
     echo Name: $tmp was skipped.
     return 0
   fi
@@ -226,7 +226,7 @@ case $comm in
     rm_path "$to" ;;
   restore) ;;
   keep)
-    rm_path "$back" ;;
+    rm_path "$to" ;;
   *)
   echo Error rm_path_to: Unknown command: $comm;
   usage 2 ;;
@@ -246,10 +246,9 @@ ftype="file"
 if only_in "$from"; then
   if skip_name; then continue; fi
   get_action "We only have $ftype: ${from}${dn}${fn}" <&3
-  cp_path_from
-#  if [ "$ftype" = "directory" -a "$action" = "fix" ]; then
-#    dir_parse
-#  fi
+  if [ "$comm" != "keep" ]; then
+    cp_path_from
+  fi
 
 elif only_in "$to"; then
   if skip_name; then continue; fi
@@ -308,7 +307,7 @@ while read wpath; do
     restore)
       from="$back"; to="$orig";;
     keep)
-      from="$back"; to="$curr";;
+      from="$curr"; to="$back";;
     *)
       echo Unknown command: $comm;
       usage 2 ;;
