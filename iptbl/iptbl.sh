@@ -162,12 +162,10 @@ stop() {
   $IPTABLES -P INPUT ACCEPT
   $IPTABLES -P OUTPUT ACCEPT
   $IPTABLES -P FORWARD ACCEPT
-  return 0
 }
 
 start() {
   create_rules
-  return 0
 }
 
 if [ ! -x $IPTABLES ]
