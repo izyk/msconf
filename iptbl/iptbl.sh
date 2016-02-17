@@ -6,7 +6,7 @@ SYSCTL=/sbin/sysctl
 
 # ACTIVE ZONES
 ZPATH=$(pwd)/zones
-ZONES="enp3s0 zeth0"
+ZONES="eth00 eth01 lbr0"
 
 zone_init () {
 # IPV4 ZONE
@@ -14,8 +14,8 @@ zone_init () {
 indev=false
 in4ip=no_address
 masq=no		# MASQUERADE packets to this network
-trust=no	# ACCEPT packets from this network
-forward=no	# FORWARD packets from this network
+trust=no	# ACCEPT all packets from this network
+forward=no	# FORWARD all packets from this network
 
 # INPUT
 I4U=""	# UDP
