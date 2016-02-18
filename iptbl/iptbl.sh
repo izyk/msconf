@@ -3,7 +3,6 @@
 
 IPTABLES=/sbin/iptables
 IP6TABLES=/sbin/ip6tables
-SYSCTL=/sbin/sysctl
 
 # ACTIVE ZONES
 ZPATH=$(pwd)/zones
@@ -206,9 +205,9 @@ then
   echo "$IPTABLES does not exist." 1>&2
   exit 2
 fi
-if [ ! -x $SYSCTL ]
+if [ ! -x $IP6TABLES ]
 then
-  echo "$SYSCTL does not exist." 1>&2
+  echo "$IP6TABLES does not exist." 1>&2
   exit 3
 fi
 
@@ -218,7 +217,6 @@ then
   then
     IPTABLES="echo iptables"
     IP6TABLES="echo ip6tables"
-    SYSCTL="echo sysctl"
   else
     usage 1
   fi
