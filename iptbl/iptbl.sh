@@ -140,22 +140,24 @@ create_default(){
   $iptbl -t filter -A CHECK-NEW-TCP -p tcp ! --tcp-flags SYN,ACK,FIN,RST SYN,ACK -j DROP
   $iptbl -t filter -A CHECK-NEW-TCP -p tcp -j REJECT --reject-with tcp-reset
 
-  $iptbl -t filter -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
   $iptbl -t filter -A INPUT -m state ! --state NEW -j DROP
   $iptbl -t filter -A INPUT -p tcp -j CHECK-NEW-TCP
   $iptbl -t filter -A INPUT -i lo -j ACCEPT
 
-  $iptbl -t filter -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
   $iptbl -t filter -A FORWARD -m state ! --state NEW -j DROP
   $iptbl -t filter -A FORWARD -p tcp -j CHECK-NEW-TCP
 }
 
 create_rules() {
+  $IPTABLES -t filter -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+  $IPTABLES -t filter -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
   create_default "$IPTABLES"
-  create_default "$IP6TABLES"
-    
   $IPTABLES -t filter -A INPUT -p icmp -j ACCEPT
+
+  $IP6TABLES -t filter -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+  $IP6TABLES -t filter -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
   $IP6TABLES -t filter -A INPUT -p ipv6-icmp -j ACCEPT
+  create_default "$IP6TABLES"
 
   load_zones
 
