@@ -1,0 +1,5 @@
+### Hetzner Online GmbH - installimage
+# routing for eth0
+ADDRESS0=0.0.0.0
+NETMASK0=0.0.0.0
+GATEWAY0=144.x.x.x

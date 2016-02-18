@@ -1,0 +1,18 @@
+### Hetzner Online GmbH - installimage
+#
+# Note for customers who want to create bridged networking for virtualisation:
+# Gateway is set in separate file
+# Do not forget to change interface in file route-eth0 and rename this file
+#
+# device: eth0
+DEVICE=eth0
+BOOTPROTO=none
+ONBOOT=yes
+HWADDR=D4:3D:x:x:x:x
+IPADDR=144.x.x.x
+NETMASK=255.255.255.255
+SCOPE="peer 144.x.x.x"
+IPV6INIT=yes
+IPV6ADDR=2a01:x:x:x::2/80
+IPV6_DEFAULTGW=fe80::1
+IPV6_DEFAULTDEV=eth0
