@@ -35,6 +35,9 @@ I4TR=""	# TCP
 F4U=""	# UDP
 F4T=""	# TCP
 
+# IPV6 FORWARDING - example "dstip,dport fe00::1,578" space separator
+F6T=""	# TCP
+
 # IPV4 IPV6 ZONE END
 }
 
@@ -63,6 +66,9 @@ build_forward_rule() {
   $IPTABLES -t nat    -A NAT_${1}     -p $2       --dport $3 -j DNAT --to $4:$5
   $IPTABLES -t filter -A FORWARD_${1} -p $2 -d $4 --dport $5 -j ACCEPT
 }
+build_6forward_rule() {
+  $IP6TABLES -t filter -A FORWARD_${1} -p $2 -d $3 --dport $4 -j ACCEPT
+}
 
 # ( "ZONE" "NAME OF PARAM - ex: F4U" "PROTO" )
 parse_4forward() {
@@ -71,6 +77,16 @@ parse_4forward() {
   do
     parse_comma $fpar
     build_forward_rule $1 $3 $PARSE_COMMA
+  done
+}
+
+# ( "ZONE" "NAME OF PARAM - ex: F6T" "PROTO" )
+parse_6forward() {
+  get_param $2
+  for fpar in $GET_PARAM
+  do
+    parse_comma $fpar
+    build_6forward_rule $1 $3 $PARSE_COMMA
   done
 }
 
@@ -129,6 +145,7 @@ load_zones() {
     local_4redirect $zone I4TR tcp
     parse_4forward $zone F4U udp
     parse_4forward $zone F4T tcp
+    parse_6forward $zone F6T tcp
   done
 }
 
