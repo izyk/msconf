@@ -5,7 +5,7 @@ IPTABLES=/sbin/iptables
 IP6TABLES=/sbin/ip6tables
 
 # ACTIVE ZONES
-ZPATH=$(pwd)/zones
+ZPATH=/etc/iptzones
 ZONES="eth00 eth01 lbr0"
 
 zone_init() {
