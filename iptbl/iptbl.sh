@@ -6,7 +6,7 @@ IP6TABLES=/sbin/ip6tables
 
 # ACTIVE ZONES
 ZPATH=/etc/iptzones
-ZONES="eth00 eth01 lbr0"
+ZONES=$(ls ${ZPATH})
 
 zone_init() {
 # IPV4 IPV6 ZONE
@@ -14,6 +14,8 @@ zone_init() {
 indev=false
 in4ip=no_address
 in6net=no_address
+# SNAT (in4ip) packets to this network from this IPV4s. Must be before MASQUARADE
+snat=no		# ( x.x.x.x[/mask][,y.y.y.y]... )
 masq=no		# MASQUERADE packets to this network only IPV4
 trust=no	# ACCEPT all packets from this network
 forward=no	# FORWARD all packets from this network
@@ -129,6 +131,9 @@ load_zones() {
     $IPTABLES -t nat    -A PREROUTING -i $indev -d $in4ip -j NAT_${zone}
     $IPTABLES -t filter -A INPUT      -i $indev -d $in4ip -j INPUT_${zone}
     $IPTABLES -t filter -A FORWARD    -i $indev -j FORWARD_${zone} # no $in4ip maybe vulnerability without "net.ipv4.conf.all.rp_filter = 1"
+    if [ $snat != 'no' ]; then
+      $IPTABLES -t nat    -A POSTROUTING -o $indev -s $snat  -j SNAT --to-source $in4ip
+    fi
     if [ $masq == 'yes' ]; then
       $IPTABLES -t nat    -A POSTROUTING -o $indev -m addrtype ! --src-type LOCAL  -j MASQUERADE
     fi
