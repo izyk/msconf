@@ -1,16 +1,21 @@
 #!/bin/sh
-# Version info - $Id: iptbl.sh,v 1.4 2016-02-12 16:59:09+03 ilia Exp ilia $
+# Version info - $Id: iptbl.sh,v 1.1 2016-08-26 19:45:32+03 root Exp root $
 
 IPTABLES=/sbin/iptables
 IP6TABLES=/sbin/ip6tables
 
-# ACTIVE ZONES
+# ZONES
 ZPATH=/etc/iptzones
 ZONES=$(ls ${ZPATH})
 
-zone_init() {
-# IPV4 IPV6 ZONE
+# GLOBAL PARAMETERS
+FMASK=0xFF00		# FORWARD MASK
+FFLAG=0x8000		# FORWARD FLAG
+forward_mark=$FFLAG	# Mark packets as forward max 127.
 
+# Set default (some times useless) values for all parameters.
+# In zones files (see above) this should be reinit with correct value.
+zone_init() {
 indev=false
 in4ip=no_address
 in6net=no_address
@@ -26,7 +31,8 @@ INT=""	# TCP
 
 # SECURITY ATTENTION!
 # OPEN WIDE TWO PORTS sport and dport - maybe vulnerability!!! Don't use on external.
-# LOCAL REDIRECTION - example "source,destination 1015,2012" space separator
+# LOCAL REDIRECTION "input_port,destination_port"
+# example "1015,2012 1016,2013" pair separate with space
 I4UR="" # UDP
 I4TR=""	# TCP
 
@@ -40,8 +46,7 @@ F4T=""	# TCP
 # IPV6 FORWARDING - example "dstip,dport fe00::1,578" space separator
 F6T=""	# TCP
 
-# IPV4 IPV6 ZONE END
-}
+} # END the default value init.
 
 get_param() {
   eval GET_PARAM=\$$1
@@ -49,14 +54,19 @@ get_param() {
 parse_comma() {
   PARSE_COMMA=$(echo $1 | tr "," ' ')
 }
+inc_forward_mark() {
+  let forward_mark=forward_mark+0x100
+}
 
 build_local_redirect() {
   # echo $1 zone
   # echo $2 proto
   # echo $3 sport
   # echo $4 dport
-  $IPTABLES -t nat    -A NAT_${1}   -p $2 --dport $3 -j REDIRECT --to-ports $4
-  $IPTABLES -t filter -A INPUT_${1} -p $2 --dport $4 -j ACCEPT
+  inc_forward_mark
+  $IPTABLES -t nat -A NAT_${1} -p $2 --dport $3 -j MARK --set-mark $forward_mark
+  $IPTABLES -t nat -A NAT_${1} -p $2 -m mark --mark ${forward_mark}/${FMASK} -j REDIRECT --to-ports $4
+#  $IPTABLES -t filter -A INPUT_${1} -p $2 --dport $4 -j ACCEPT
 }
 
 build_forward_rule() {
@@ -65,9 +75,13 @@ build_forward_rule() {
   # echo $3 sport
   # echo $4 dstip
   # echo $5 dport
-  $IPTABLES -t nat    -A NAT_${1}     -p $2       --dport $3 -j DNAT --to $4:$5
-  $IPTABLES -t filter -A FORWARD_${1} -p $2 -d $4 --dport $5 -j ACCEPT
+  inc_forward_mark
+#  $IPTABLES -t mangle -A MARK_${1} -p $2 --dport $3 -j MARK --set-mark $forward_mark
+  $IPTABLES -t nat -A NAT_${1} -p $2 --dport $3 -j MARK --set-mark $forward_mark
+  $IPTABLES -t nat -A NAT_${1} -p $2 -m mark --mark ${forward_mark}/${FMASK} -j DNAT --to $4:$5
+#  $IPTABLES -t filter -A FORWARD_${1} -p $2 -d $4 --dport $5 -j ACCEPT
 }
+
 build_6forward_rule() {
   $IP6TABLES -t filter -A FORWARD_${1} -p $2 -d $3 --dport $4 -j ACCEPT
 }
@@ -125,12 +139,14 @@ load_zones() {
       $IP6TABLES -t filter -A FORWARD -i $indev -j ACCEPT
     fi
 
+#    $IPTABLES -t mangle -N MARK_${zone}
     $IPTABLES -t nat    -N NAT_${zone}
     $IPTABLES -t filter -N INPUT_${zone}
-    $IPTABLES -t filter -N FORWARD_${zone}
+#    $IPTABLES -t filter -N FORWARD_${zone}
+#    $IPTABLES -t mangle -A PREROUTING -i $indev -d $in4ip -j MARK_${zone}
     $IPTABLES -t nat    -A PREROUTING -i $indev -d $in4ip -j NAT_${zone}
     $IPTABLES -t filter -A INPUT      -i $indev -d $in4ip -j INPUT_${zone}
-    $IPTABLES -t filter -A FORWARD    -i $indev -j FORWARD_${zone} # no $in4ip maybe vulnerability without "net.ipv4.conf.all.rp_filter = 1"
+#    $IPTABLES -t filter -A FORWARD    -i $indev -j FORWARD_${zone} # no $in4ip maybe vulnerability without "net.ipv4.conf.all.rp_filter = 1"
     if [ $snat != 'no' ]; then
       $IPTABLES -t nat    -A POSTROUTING -o $indev -s $snat  -j SNAT --to-source $in4ip
     fi
@@ -175,6 +191,8 @@ create_rules() {
   $IPTABLES -t filter -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
   create_default "$IPTABLES"
   $IPTABLES -t filter -A INPUT -p icmp -j ACCEPT
+  $IPTABLES -t filter -A FORWARD -m mark --mark $FFLAG/$FFLAG -j ACCEPT
+  $IPTABLES -t filter -A INPUT   -m mark --mark $FFLAG/$FFLAG -j ACCEPT
 
   $IP6TABLES -t filter -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
   $IP6TABLES -t filter -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
