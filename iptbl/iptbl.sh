@@ -21,7 +21,6 @@ forward_mark=$FFLAG	# Mark packets as forward max 128.
 zone_init() {
 indev=false
 in4ip=no_address
-in6net=no_address
 # SNAT outgoing packets to in4ip address from this IPV4s source. Must be before MASQUARADE
 snat=no		# ( x.x.x.x[/mask][;y.y.y.y]... )
 masq=no		# MASQUERADE packets to this network only IPV4
@@ -44,6 +43,7 @@ udp4forward=""	# UDP
 tcp4forward=""	# TCP
 
 # IPV6 FORWARDING - example "dstip;dport fe00::1;578" semicolon separator
+udp6forward=""	# UDP
 tcp6forward=""	# TCP
 
 } # END the default value init.
@@ -61,29 +61,33 @@ inc_forward_mark() {
 build_local_redirect() {
   # echo $1 zone
   # echo $2 proto
-  # echo $3 sport
-  # echo $4 dport
-  $IPTABLES -t nat -A NAT_${1} -p $2 --dport $3 -j MARK --set-mark $forward_mark
-  $IPTABLES -t nat -A NAT_${1} -p $2 -m mark --mark ${forward_mark}/${FMASK} -j REDIRECT --to-ports $4
+  # echo $3 dport
+  # echo $4 redirect_port
+  $IPTABLES -t nat -A ${1} -p $2 --dport $3 -j MARK --set-mark ${forward_mark}/${FMASK}
+  $IPTABLES -t nat -A ${1} -p $2 -m mark --mark ${forward_mark}/${FMASK} -j REDIRECT --to-ports $4
   inc_forward_mark
-#  $IPTABLES -t filter -A INPUT_${1} -p $2 --dport $4 -j ACCEPT
 }
 
 build_forward_rule() {
   # echo $1 zone
   # echo $2 proto
-  # echo $3 sport
-  # echo $4 dstip
-  # echo $5 dport
-#  $IPTABLES -t mangle -A MARK_${1} -p $2 --dport $3 -j MARK --set-mark $forward_mark
-  $IPTABLES -t nat -A NAT_${1} -p $2 --dport $3 -j MARK --set-mark $forward_mark
-  $IPTABLES -t nat -A NAT_${1} -p $2 -m mark --mark ${forward_mark}/${FMASK} -j DNAT --to $4:$5
+  # echo $3 dport
+  # echo $4 redirect_ip
+  # echo $5 redirect_port
+  if [ "$5" == "multi" ]; then
+    $IPTABLES -t nat -A ${1} -p $2 -m multiport --dports $3 -j MARK --set-mark ${forward_mark}/${FMASK}
+    $IPTABLES -t nat -A ${1} -p $2 -m mark --mark ${forward_mark}/${FMASK} -j DNAT --to $4
+  else
+    $IPTABLES -t nat -A ${1} -p $2 --dport $3 -j MARK --set-mark ${forward_mark}/${FMASK}
+    $IPTABLES -t nat -A ${1} -p $2 -m mark --mark ${forward_mark}/${FMASK} -j DNAT --to $4:$5
+  fi
   inc_forward_mark
-#  $IPTABLES -t filter -A FORWARD_${1} -p $2 -d $4 --dport $5 -j ACCEPT
 }
 
+# No use param $1 - zone ( "ZONE" "PROTO" "DISTIP" "DISTPORTS" )
 build_6forward_rule() {
-  $IP6TABLES -t filter -A FORWARD_${1} -p $2 -d $3 --dport $4 -j ACCEPT
+  $IP6TABLES -t filter -A FORWARD -i $indev -p $2 -d $3 -m multiport --dports $4 -j ACCEPT
+  $IP6TABLES -t filter -A FORWARD -i $indev -d $3 -p icmpv6 --icmpv6-type echo-request -j ACCEPT
 }
 
 # ( "ZONE" "NAME OF PARAM - ex: udp4forward" "PROTO" )
@@ -119,8 +123,9 @@ local_4redirect() {
 # ( "ZONE" "PORTS" "PROTO" )
 in_ports() {
   if [ x"$2" != x"" ]; then
-    $IPTABLES -t filter -A INPUT_${1} -p $3 -m multiport --dports $2 -j ACCEPT
-    $IP6TABLES -t filter -A INPUT_${1} -p $3 -m multiport --dports $2 -j ACCEPT
+    $IPTABLES -t nat -A ${1} -p $3 -m multiport --dports $2 -j MARK --set-mark ${forward_mark}/${FMASK}
+    inc_forward_mark
+    $IP6TABLES -t filter -A INPUT -p $3 -m multiport --dports $2 -j ACCEPT
   fi
 }
 
@@ -139,25 +144,14 @@ load_zones() {
       $IP6TABLES -t filter -A FORWARD -i $indev -j ACCEPT
     fi
 
-#    $IPTABLES -t mangle -N MARK_${zone}
-    $IPTABLES -t nat    -N NAT_${zone}
-    $IPTABLES -t filter -N INPUT_${zone}
-#    $IPTABLES -t filter -N FORWARD_${zone}
-#    $IPTABLES -t mangle -A PREROUTING -i $indev -d $in4ip -j MARK_${zone}
-    $IPTABLES -t nat    -A PREROUTING -i $indev -d $in4ip -j NAT_${zone}
-    $IPTABLES -t filter -A INPUT      -i $indev -d $in4ip -j INPUT_${zone}
-#    $IPTABLES -t filter -A FORWARD    -i $indev -j FORWARD_${zone} # no $in4ip maybe vulnerability without "net.ipv4.conf.all.rp_filter = 1"
+    $IPTABLES -t nat    -N ${zone}
+    $IPTABLES -t nat    -A PREROUTING -i $indev -d $in4ip -j ${zone}
     if [ $snat != 'no' ]; then
       $IPTABLES -t nat    -A POSTROUTING -o $indev -s $snat  -j SNAT --to-source $in4ip
     fi
     if [ $masq == 'yes' ]; then
       $IPTABLES -t nat    -A POSTROUTING -o $indev -m addrtype ! --src-type LOCAL  -j MASQUERADE
     fi
-
-    $IP6TABLES -t filter -N INPUT_${zone}
-    $IP6TABLES -t filter -N FORWARD_${zone}
-    $IP6TABLES -t filter -A INPUT      -i $indev -d $in6net -j INPUT_${zone}
-    $IP6TABLES -t filter -A FORWARD    -i $indev -d $in6net -j FORWARD_${zone}
 
     in_ports $zone "$udpin" udp
     in_ports $zone "$tcpin" tcp
@@ -166,6 +160,8 @@ load_zones() {
     local_4redirect $zone tcprin tcp
     parse_4forward $zone udp4forward udp
     parse_4forward $zone tcp4forward tcp
+
+    parse_6forward $zone udp6forward udp
     parse_6forward $zone tcp6forward tcp
   done
 }
